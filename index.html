@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TRACE_DATA - Terminal Access</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+    // Global variable to store the report text for clean PDF generation
+    window.traceReportText = ""; 
+    window.jspdf = window.jspdf || {}; // Ensure jspdf namespace is ready
+</script>
+
+<style>
+   * { box-sizing: border-box; }
+   body {
+     font-family: 'Courier New', monospace;
+     background: #000000;
+     color: #00ff00;
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     justify-content: center;
+     min-height: 100vh;
+     margin: 0;
+     padding: 20px;
+     overflow-x: hidden;
+     position: relative;
+     transition: all 0.5s;
+   }
+
+   /* --- Animations & Modes --- */
+   body.success-mode { animation: success-wave 2s ease-in-out; }
+   @keyframes success-wave {
+     0%, 100% { background: #000000; }
+     25% { background: #001a00; }
+     50% { background: #003300; }
+     75% { background: #001a00; }
+   }
+   body.danger-mode {
+     background: #1a0000;
+     color: #ff0000;
+     animation: screen-shake 0.5s;
+   }
+   @keyframes screen-shake {
+     0%, 100% { transform: translate(0, 0); }
+     10%, 30%, 50%, 70%, 90% { transform: translate(-3px, 2px); }
+     20%, 40%, 60%, 80% { transform: translate(3px, -2px); }
+   }
+
+   /* --- Background Effects --- */
+   body::before {
+     content: ''; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+     background: repeating-linear-gradient(0deg, rgba(0, 255, 0, 0.03) 0px, transparent 1px, transparent 2px, rgba(0, 255, 0, 0.03) 3px);
+     pointer-events: none; z-index: 1; transition: all 0.5s;
+   }
+   body.danger-mode::before {
+     background: repeating-linear-gradient(0deg, rgba(255, 0, 0, 0.05) 0px, transparent 1px, transparent 2px, rgba(255, 0, 0, 0.05) 3px);
+   }
+   .matrix-bg {
+     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+     overflow: hidden; z-index: 0; opacity: 0.15; transition: opacity 0.5s;
+   }
+   body.danger-mode .matrix-bg { opacity: 0.25; }
+   body.success-mode .matrix-bg { opacity: 0.35; animation: matrix-boost 2s; }
+   @keyframes matrix-boost { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.5; } }
+   
+   .matrix-column {
+     position: absolute; top: -100%; font-size: 14px; color: #00ff00;
+     animation: matrix-fall linear infinite; transition: color 0.5s;
+   }
+   body.danger-mode .matrix-column { color: #ff0000; }
+   @keyframes matrix-fall { to { top: 100%; } }
+
+   .scanline {
+     position: fixed; top: 0; left: 0; width: 100%; height: 2px;
+     background: rgba(0, 255, 0, 0.5); box-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+     animation: scan 4s linear infinite; z-index: 1000; pointer-events: none; transition: all 0.5s;
+   }
+   body.danger-mode .scanline {
+     background: rgba(255, 0, 0, 0.7); box-shadow: 0 0 15px rgba(255, 0, 0, 1);
+     animation: scan-fast 2s linear infinite;
+   }
+   @keyframes scan { from { transform: translateY(0); } to { transform: translateY(100vh); } }
+   @keyframes scan-fast { from { transform: translateY(0); } to { transform: translateY(100vh); } }
+
+   /* --- Typography --- */
+   .glitch {
+     text-shadow: 2px 2px 0px #ff0000, -2px -2px 0px #00ff00;
+     animation: glitch 2s infinite;
+   }
+   body.danger-mode .glitch {
+     text-shadow: 3px 3px 0px #ffff00, -3px -3px 0px #ff0000;
+     animation: glitch-danger 1s infinite;
+   }
+   @keyframes glitch {
+     0%, 90%, 100% { text-shadow: 2px 2px 0px #ff0000, -2px -2px 0px #00ff00; }
+     95% { text-shadow: -5px 5px 0px #ff0000, 5px -5px 0px #00ff00; }
+   }
+   @keyframes glitch-danger {
+     0%, 90%, 100% { text-shadow: 3px 3px 0px #ffff00, -3px -3px 0px #ff0000; }
+     45%, 95% { text-shadow: -6px 6px 0px #ffff00, 6px -6px 0px #ff0000; }
+   }
+
+   h1 {
+     color: #00ff00; text-align: center; margin-bottom: 30px; font-size: 2.2em;
+     letter-spacing: 5px; text-transform: uppercase; position: relative; z-index: 10; transition: all 0.5s;
+   }
+   body.danger-mode h1 { color: #ff0000; }
+
+   /* --- Terminal Container --- */
+   .terminal {
+     background: rgba(0, 20, 0, 0.95); padding: 30px; border-radius: 0;
+     box-shadow: 0 0 30px rgba(0, 255, 0, 0.4), inset 0 0 80px rgba(0, 255, 0, 0.05);
+     width: 100%; max-width: 600px; border: 3px solid #00ff00;
+     position: relative; z-index: 10; transition: all 0.5s;
+   }
+   body.success-mode .terminal { animation: terminal-success 1.5s; }
+   @keyframes terminal-success {
+     0%, 100% { box-shadow: 0 0 30px rgba(0, 255, 0, 0.4), inset 0 0 80px rgba(0, 255, 0, 0.05); }
+     50% { box-shadow: 0 0 80px rgba(0, 255, 0, 1), inset 0 0 150px rgba(0, 255, 0, 0.2); }
+   }
+   body.danger-mode .terminal {
+     background: rgba(20, 0, 0, 0.95);
+     box-shadow: 0 0 40px rgba(255, 0, 0, 0.6), inset 0 0 100px rgba(255, 0, 0, 0.1);
+     border: 3px solid #ff0000; animation: terminal-pulse 1s infinite;
+   }
+   @keyframes terminal-pulse {
+     0%, 100% { box-shadow: 0 0 40px rgba(255, 0, 0, 0.6); }
+     50% { box-shadow: 0 0 60px rgba(255, 0, 0, 0.9); }
+   }
+
+   /* Terminal Decorations */
+   .terminal::before {
+     content: '[Ayush@Lab]'; position: absolute; top: -30px; left: 0;
+     color: #00ff00; font-size: 24px; letter-spacing: 3px;
+     text-shadow: 0 0 10px rgba(0, 255, 0, 0.8); transition: all 0.5s;
+   }
+   body.danger-mode .terminal::before {
+     content: '[ !!! SECURITY BREACH !!! ]'; color: #ff0000;
+     text-shadow: 0 0 15px rgba(255, 0, 0, 1); animation: text-flicker 0.3s infinite;
+   }
+   @keyframes text-flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+   .terminal::after {
+     content: ''; position: absolute; top: -25px; right: 10px;
+     width: 10px; height: 10px; background: #ff0000; border-radius: 50%;
+     box-shadow: 0 0 10px #ff0000, 15px 0 0 #ffff00, 15px 0 10px #ffff00, 30px 0 0 #00ff00, 30px 0 10px #00ff00;
+     animation: blink-light 2s infinite; transition: all 0.5s;
+   }
+   body.danger-mode .terminal::after { animation: danger-lights 0.3s infinite; }
+   body.success-mode .terminal::after { animation: success-lights 0.3s ease-in-out 6; }
+
+   @keyframes blink-light { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+   @keyframes danger-lights { 0%, 100% { box-shadow: 0 0 15px #ff0000, 15px 0 0 #ff0000; } 50% { box-shadow: 0 0 5px #ff0000, 15px 0 0 #ff0000; } }
+   @keyframes success-lights { 0%, 100% { box-shadow: 0 0 15px #00ff00, 15px 0 0 #00ff00; } 50% { box-shadow: 0 0 5px #00ff00, 15px 0 0 #00ff00; } }
+
+   /* --- Inputs & Buttons --- */
+   .greeting {
+     color: #00ff00; font-size: 20px; margin-bottom: 25px;
+     text-shadow: 0 0 10px rgba(0, 255, 0, 0.8);
+     min-height: 1.2em; /* Reserve space */
+   }
+
+   input {
+     width: 100%; padding: 14px; border: 2px solid #00ff00; border-radius: 0;
+     margin-bottom: 15px; font-size: 16px; background: rgba(0, 0, 0, 0.9);
+     color: #00ff00; font-family: 'Courier New', monospace;
+     transition: all 0.3s; box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.2);
+   }
+   body.danger-mode input { border: 2px solid #ff0000; color: #ff0000; box-shadow: inset 0 0 15px rgba(255, 0, 0, 0.3); }
+   input:focus { outline: none; box-shadow: 0 0 20px rgba(0, 255, 0, 0.6), inset 0 0 20px rgba(0, 255, 0, 0.3); background: rgba(0, 0, 0, 1); }
+   
+   .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 15px; /* Space between the two buttons */
+      margin-bottom: 15px;
+   }
+   
+   /* Mode Selector Buttons */
+   .mode-selector {
+       display: flex;
+       gap: 10px;
+       margin-bottom: 15px;
+   }
+   
+   .mode-btn {
+       flex: 1;
+       padding: 10px;
+       font-size: 14px;
+       background: rgba(0, 20, 0, 0.5);
+       border: 1px solid #005500;
+       color: #008800;
+       cursor: pointer;
+       transition: all 0.3s;
+       text-transform: uppercase;
+   }
+   
+   .mode-btn.active {
+       background: #002200;
+       border: 1px solid #00ff00;
+       color: #00ff00;
+       box-shadow: 0 0 10px rgba(0,255,0,0.3);
+   }
+   
+   .mode-btn:hover {
+       border-color: #00ff00;
+       color: #00ff00;
+   }
+
+   button {
+     width: 100%; padding: 14px; background: #001100; color: #00ff00;
+     border: 2px solid #00ff00; border-radius: 0; font-size: 16px; cursor: pointer;
+     font-weight: bold; font-family: 'Courier New', monospace; text-transform: uppercase;
+     letter-spacing: 3px; transition: all 0.3s; box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+   }
+   body.danger-mode button { background: #110000; color: #ff0000; border: 2px solid #ff0000; box-shadow: 0 0 20px rgba(255, 0, 0, 0.4); }
+   button:hover { background: #00ff00; color: #000000; box-shadow: 0 0 30px rgba(0, 255, 0, 0.8); transform: translateY(-2px); }
+   body.danger-mode button:hover { background: #ff0000; color: #000000; }
+   button::before { content: '> '; } button::after { content: ' <'; }
+
+   /* Download Button Styles */
+   #downloadBtn {
+        margin-top: 15px;
+        background: #000011 !important; 
+        border-color: #00ffcc !important; /* Cyan border */
+        color: #00ffcc !important;
+        box-shadow: 0 0 15px rgba(0, 255, 204, 0.5) !important;
+        letter-spacing: 2px;
+        font-size: 14px;
+        padding: 10px;
+   }
+   #downloadBtn:hover {
+        background: #00ffcc !important;
+        color: #000000 !important;
+        box-shadow: 0 0 30px rgba(0, 255, 204, 1) !important;
+   }
+   #downloadBtn::before { content: '↓ '; }
+   #downloadBtn::after { content: ' PDF'; }
+
+   /* --- Result Display --- */
+   #result {
+     margin-top: 20px; font-size: 14px; line-height: 1.6; color: #00ff00;
+     border-top: 2px solid #00ff00; padding-top: 20px; max-height: 450px; overflow-y: auto;
+   }
+   #result::-webkit-scrollbar { width: 10px; }
+   #result::-webkit-scrollbar-track { background: rgba(0, 50, 0, 0.3); }
+   #result::-webkit-scrollbar-thumb { background: #00ff00; box-shadow: inset 0 0 5px rgba(0, 255, 0, 0.5); }
+
+   /* Formatting Classes for Key-Value Pairs */
+   .data-row {
+     display: flex;
+     margin-bottom: 12px;
+     align-items: flex-start;
+     opacity: 0; /* Start hidden, JS will fade it in */
+     transition: opacity 0.3s ease-out;
+     border-bottom: 1px dashed rgba(0, 255, 0, 0.2);
+     padding-bottom: 5px;
+   }
+   
+   .data-label {
+     min-width: 150px; /* Fixed width for alignment */
+     font-weight: bold;
+     color: #00ff00;
+     text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+     flex-shrink: 0;
+   }
+
+   .data-value {
+     color: #e0ffe0;
+     word-break: break-word;
+     white-space: pre-wrap; /* Preserves newlines we insert */
+     position: relative; /* For cursor */
+   }
+
+   /* Typing cursor for result values */
+   .data-value.typing-cursor::after {
+     content: '█';
+     animation: cursor-blink 0.8s step-end infinite;
+     margin-left: 2px;
+     color: #00ff00;
+     text-shadow: 0 0 5px #00ff00;
+   }
+   body.danger-mode .data-value.typing-cursor::after {
+     color: #ff0000;
+     text-shadow: 0 0 5px #ff0000;
+   }
+
+
+   .record-header {
+      background: rgba(0, 50, 0, 0.5);
+      color: #00ff00;
+      padding: 5px;
+      margin: 15px 0;
+      text-align: center;
+      font-weight: bold;
+      border: 1px solid #00ff00;
+      text-transform: uppercase;
+      opacity: 0; /* Start hidden */
+      transition: opacity 0.5s ease-in-out;
+   }
+
+   .centered-footer {
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 2px solid #00ff00;
+      font-weight: bold;
+      letter-spacing: 1px;
+      animation: pulse-success 2s infinite;
+   }
+
+   .access-granted { color: #00ff00; font-weight: bold; animation: pulse-success 1s ease-in-out 3; text-shadow: 0 0 15px rgba(0, 255, 0, 1); font-size: 18px; }
+   .access-denied { color: #ff0000; font-weight: bold; animation: shake-text 0.5s; text-shadow: 0 0 20px rgba(255, 0, 0, 1); font-size: 18px; }
+   
+   @keyframes slide-in { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+   @keyframes pulse-success { 0%, 100% { opacity: 1; text-shadow: 0 0 15px rgba(0, 255, 0, 1); } 50% { opacity: 0.7; text-shadow: 0 0 30px rgba(0, 255, 0, 1); } }
+   @keyframes shake-text { 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); } 20%, 40%, 60%, 80% { transform: translateX(5px); } }
+
+   .error { color: #ff0000; text-shadow: 0 0 10px rgba(255, 0, 0, 0.8); animation: error-pulse 1s infinite; }
+   @keyframes error-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+   
+   .hidden { display: none; }
+   
+   /* Loading Animation */
+   .loading { position: relative; animation: loading-pulse 1.5s infinite; }
+   .loading::after { content: '█'; animation: cursor-blink 0.8s step-end infinite; margin-left: 5px; }
+   @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+   .loading-bar { width: 100%; height: 4px; background: rgba(0, 255, 0, 0.2); margin-top: 10px; position: relative; overflow: hidden; }
+   .loading-bar::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.8), transparent); animation: loading-sweep 1.5s infinite; }
+   @keyframes loading-sweep { 0% { left: -100%; } 100% { left: 100%; } }
+   
+   .scanning-text { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+   .scan-line { opacity: 0; animation: scan-appear 0.5s forwards; }
+   @keyframes scan-appear { to { opacity: 1; } }
+
+   .ascii-border { margin: 20px 0; color: #006600; font-size: 12px; text-align: center; transition: all 0.5s; }
+   body.danger-mode .ascii-border { color: #660000; }
+   
+   .danger-warning, .success-banner {
+     position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+     padding: 15px 30px; font-weight: bold; font-size: 18px; z-index: 2000;
+     letter-spacing: 2px;
+   }
+   .danger-warning { background: rgba(255, 0, 0, 0.9); color: #000; border: 2px solid #ff0000; box-shadow: 0 0 30px rgba(255, 0, 0, 0.8); animation: warning-flash 0.5s infinite; }
+   .success-banner { background: rgba(0, 255, 0, 0.9); color: #000; border: 2px solid #00ff00; box-shadow: 0 0 30px rgba(0, 255, 0, 0.8); animation: success-flash 0.3s ease-in-out 4; }
+</style>
+</head>
+<body>
+   <div class="matrix-bg" id="matrixBg"></div>
+   <div class="scanline"></div>
+   
+   <div id="loginScreen" class="terminal">
+     <h1 class="glitch">SERVER ACCESS</h1>
+     <div class="ascii-border">╔════════════════════════════════╗</div>
+     <div class="greeting"></div> <input type="password" id="passwordInput" placeholder="[Enter Digital Lab Key ]" />
+     <button onclick="authenticate()">AUTHENTICATE</button>
+     <div id="loginResult"></div>
+     <div class="ascii-border">╚════════════════════════════════╝</div>
+   </div>
+   
+   <div id="appScreen" class="terminal hidden">
+     <h1 class="glitch">Data Server</h1>
+     <div class="ascii-border">╔════════════════════════════════╗</div>
+     
+     <div class="mode-selector">
+        <button id="btnPhone" class="mode-btn active" onclick="switchMode('PHONE')">Number TRACE</button>
+        <button id="btnUid" class="mode-btn" onclick="switchMode('AADHAAR')">Aadhaar TRACE</button>
+     </div>
+
+     <input type="text" id="numberInput" maxlength="10" placeholder="[Target Phone number]" />
+     
+     <div class="button-group">
+        <button onclick="fetchData()">INITIATE TRACE</button>
+     </div>
+     
+     <div id="result">
+        </div>
+     <div class="ascii-border">╚════════════════════════════════╝</div>
+   </div>
+   <div class="centered-footer">Powered by Ayush@8481</div>
+         
+           
+
+<script>
+// Global Mode Tracking
+let currentMode = 'PHONE'; // Default mode
+
+// Matrix background effect
+function createMatrix() {
+   const container = document.getElementById('matrixBg');
+   const chars = '01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン';
+   for (let i = 0; i < 20; i++) {
+     const column = document.createElement('div');
+     column.className = 'matrix-column';
+     column.style.left = Math.random() * 100 + '%';
+     column.style.animationDuration = (Math.random() * 3 + 2) + 's';
+     column.style.animationDelay = Math.random() * 2 + 's';
+     let text = '';
+     for (let j = 0; j < 30; j++) {
+       text += chars[Math.floor(Math.random() * chars.length)] + '<br>';
+     }
+     column.innerHTML = text;
+     container.appendChild(column);
+   }
+}
+createMatrix();
+
+// Delay helper function
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
+// "Compiling" greeting effect
+async function initGreeting() {
+    const el = document.querySelector('.greeting');
+    if (!el) return;
+    const targetText = "Hello Ayush_";
+    const chars = 'ABCDE#@!%&123?*';
+     
+    el.textContent = '';
+
+    for (let i = 0; i < targetText.length; i++) {
+        // Scramble effect
+        for (let j = 0; j < 3; j++) {
+            let scramble = '';
+            for(let k = 0; k < targetText.length; k++) {
+                if (k <= i) {
+                    scramble += targetText[k];
+                } else {
+                    scramble += chars[Math.floor(Math.random() * chars.length)];
+                }
+            }
+            el.textContent = scramble;
+            await delay(40);
+        }
+        // Set correct char
+        el.textContent = targetText.substring(0, i + 1) + "_";
+    }
+    // Final text
+    el.textContent = targetText;
+    el.innerHTML += '<span style="animation: cursor-blink 0.8s step-end infinite;">█</span>';
+}
+initGreeting(); // Run the new greeting animation
+
+
+function authenticate() {
+   const password = document.getElementById("passwordInput").value;
+   const loginResult = document.getElementById("loginResult");
+   
+   if (password === "Ayush@8481") {
+     document.body.classList.remove('danger-mode');
+     const existingWarning = document.querySelector('.danger-warning');
+     if (existingWarning) existingWarning.remove();
+     
+     document.body.classList.add('success-mode');
+     
+     const successBanner = document.createElement('div');
+     successBanner.className = 'success-banner';
+     successBanner.innerHTML = '✓ ACCESS GRANTED - WELCOME AYUSH✓';
+     document.body.appendChild(successBanner);
+     
+     loginResult.innerHTML = '<div class="access-granted">[✓] AUTHENTICATION SUCCESSFUL - INITIALIZING...</div>';
+     
+     setTimeout(() => {
+       document.body.classList.remove('success-mode');
+       successBanner.remove();
+       document.getElementById("loginScreen").classList.add("hidden");
+       document.getElementById("appScreen").classList.remove("hidden");
+     }, 2000);
+   } else {
+     document.body.classList.add('danger-mode');
+     if (!document.querySelector('.danger-warning')) {
+       const warning = document.createElement('div');
+       warning.className = 'danger-warning';
+       warning.innerHTML = '⚠ UNAUTHORIZED ACCESS ATTEMPT ⚠';
+       document.body.appendChild(warning);
+     }
+     
+     loginResult.innerHTML = '<div class="access-denied">[✗] ACCESS DENIED - SECURITY BREACH DETECTED</div>';
+     document.getElementById("passwordInput").value = "";
+     
+     setTimeout(() => {
+       document.body.classList.remove('danger-mode');
+       const warning = document.querySelector('.danger-warning');
+       if (warning) warning.remove();
+     }, 3000);
+   }
+}
+
+document.getElementById("passwordInput").addEventListener("keypress", function(e) {
+   if (e.key === "Enter") authenticate();
+});
+
+document.getElementById("numberInput").addEventListener("keypress", function(e) {
+   if (e.key === "Enter") fetchData();
+});
+
+// New Mode Switching Logic
+function switchMode(mode) {
+    currentMode = mode;
+    const inputField = document.getElementById("numberInput");
+    const resultBox = document.getElementById("result");
+    
+    // Clear previous results
+    resultBox.innerHTML = '';
+    inputField.value = '';
+
+    // Update Buttons
+    const btnPhone = document.getElementById("btnPhone");
+    const btnUid = document.getElementById("btnUid");
+
+    if (mode === 'PHONE') {
+        btnPhone.classList.add('active');
+        btnUid.classList.remove('active');
+        inputField.placeholder = "[Target Phone number]";
+        inputField.maxLength = 10;
+    } else {
+        btnUid.classList.add('active');
+        btnPhone.classList.remove('active');
+        inputField.placeholder = "[Target Aadhaar number]";
+        inputField.maxLength = 12;
+    }
+}
+
+
+async function fetchData() {
+   const number = document.getElementById("numberInput").value.trim();
+   const resultBox = document.getElementById("result");
+   
+   // Clear previous content and download button
+   resultBox.innerHTML = '';
+   
+   // Validation based on mode
+   let isValid = false;
+   if (currentMode === 'PHONE') {
+       if (number.length === 10 && !isNaN(number)) isValid = true;
+       else resultBox.innerHTML = '<div class="error">[!] ERROR: Invalid input. Enter 10-digit Mobile No.</div>';
+   } else {
+       if (number.length === 12 && !isNaN(number)) isValid = true;
+       else resultBox.innerHTML = '<div class="error">[!] ERROR: Invalid input. Enter 12-digit Aadhaar No.</div>';
+   }
+
+   if (!isValid) return;
+   
+   resultBox.innerHTML = `
+     <div class="loading">[*] Initializing ${currentMode} trace protocol</div>
+     <div class="loading-bar"></div>
+     <div class="scanning-text">
+       <div class="scan-line" style="animation-delay: 0.5s;">[*] Connecting to database...</div>
+       <div class="scan-line" style="animation-delay: 1s;">[*] Scanning network nodes...</div>
+       <div class="scan-line" style="animation-delay: 1.5s;">[*] Analyzing target data...</div>
+       <div class="scan-line" style="animation-delay: 2s;">[*] Decrypting information...</div>
+     </div>
+   `;
+   
+   // URL Selection based on mode
+   let targetUrl = "";
+   if (currentMode === 'PHONE') {
+       targetUrl = `https://r.jina.ai/http://meowmeow.rf.gd/gand/mobile.php?num=${number}`;
+   } else {
+       targetUrl = `https://r.jina.ai/https://meowmeow.rf.gd/gand/AADHAR.php?id=${number}`;
+   }
+   
+   try {
+     let response = await fetch(targetUrl);
+     if (!response.ok) throw new Error("Server error");
+     let text = await response.text();
+     await processAndDisplayData(text); 
+   } catch (err) {
+      console.error(err); 
+      resultBox.innerHTML = '<div class="error">[!] No Data Found on Server or Connection Failed.</div>';
+   }
+}
+
+// Helper function to type out the value (handles numbers)
+async function typeValue(element, text, speed = 10) {
+    element.classList.add('typing-cursor');
+     
+    const safeText = String(text); 
+
+    const lines = safeText.split('\n'); 
+     
+    for (let i = 0; i < lines.length; i++) {
+        if (i > 0) {
+            element.appendChild(document.createElement('br'));
+        }
+        const lineText = lines[i];
+        for (const char of lineText) {
+            element.appendChild(document.createTextNode(char)); 
+            if (char !== ' ') await delay(speed); 
+        }
+    }
+    element.classList.remove('typing-cursor');
+}
+
+
+// Async display function
+async function processAndDisplayData(rawText) {
+    const resultBox = document.getElementById("result");
+     
+    window.traceReportText = "";
+
+    const jsonStart = rawText.indexOf('{');
+    const jsonEnd = rawText.lastIndexOf('}');
+     
+    if (jsonStart === -1 || jsonEnd === -1) {
+        resultBox.innerHTML = '<div class="error">[!] ERROR: DATA MALFORMED OR NOT FOUND</div>';
+        return;
+    }
+
+    const jsonString = rawText.substring(jsonStart, jsonEnd + 1);
+
+    try {
+        const data = JSON.parse(jsonString);
+        
+        // --- LOGIC UPDATE: Handle both 'result' (phone) and 'data' (aadhaar) arrays ---
+        let records = [];
+        if (data.result && Array.isArray(data.result)) {
+            records = data.result; // Phone API Structure
+        } else if (data.data && Array.isArray(data.data)) {
+            records = data.data;   // Aadhaar API Structure
+        }
+
+        if (records.length > 0) {
+             
+            resultBox.innerHTML = '<div class="access-granted" style="margin-bottom: 20px;">[✓] TRACE COMPLETE - DATA RETRIEVED</div>';
+            await delay(300); 
+             
+            window.traceReportText += "========================================\n";
+            window.traceReportText += "                              TRACE REPORT GENERATED        \n";
+            window.traceReportText += "========================================\n\n";
+             
+            for (const [index, info] of records.entries()) {
+                 
+                const headerText = `[ TRACE RESULT #${index + 1} ]`;
+                const headerEl = document.createElement('div');
+                headerEl.className = 'record-header';
+                headerEl.textContent = headerText;
+                resultBox.appendChild(headerEl);
+                await delay(100); 
+                headerEl.style.opacity = 1; 
+                 
+                window.traceReportText += `${headerText}\n`;
+                window.traceReportText += `----------------------------------------\n`;
+                
+                await delay(200); 
+                 
+                const processedKeys = new Set();
+
+                // Consolidated Priority List (Phone + Aadhaar keys)
+                const priorityList = [
+                    { key: 'id', label: 'Aadhaar/ID' }, // Covers Aadhaar 'id' (UID)
+                    { key: 'mobile', label: 'Mobile no.' },
+                    { key: 'name', label: 'Name.' },
+                    { key: 'father_name', label: 'Father Name' }, // Phone API
+                    { key: 'fname', label: 'Father Name' },       // Aadhaar API
+                    { key: 'dob', label: 'DOB' },
+                    { key: 'gender', label: 'Gender' },
+                    { key: 'pincode', label: 'Pincode' },
+                    { key: 'address', label: 'Address-' },
+                    { key: 'alt_mobile', label: 'Alternate No' }, // Phone API
+                    { key: 'alt', label: 'Alternate No' },        // Aadhaar API
+                    { key: 'email', label: 'Email ID' },       
+                    { key: 'circle', label: 'Sim card -' },
+                    { key: 'id_number', label: 'Aadhaar no ' }
+                ];
+
+                for (const item of priorityList) {
+                    let value = info[item.key] || "N/A";
+                    
+                    // Skip if key doesn't exist in this specific result
+                    if (info[item.key] === undefined) continue; 
+
+                    if(value === "") value = "N/A"; 
+                     
+                    const paddedLabel = item.label.padEnd(16, ' ');
+                    let displayValue = value;
+
+                    if (item.key === 'address' && value !== "N/A") {
+                          value = value.replace(/!/g, ', ').replace(/ ,/g, ',').trim();
+                          if(value.startsWith(',')) value = value.substring(1).trim();
+                          
+                          displayValue = value;
+                          if (displayValue.length > 40) {
+                              const lastComma = displayValue.lastIndexOf(',');
+                              if (lastComma > 20) {
+                                  displayValue = displayValue.substring(0, lastComma + 1) + "\n" + displayValue.substring(lastComma + 1).trim();
+                              }
+                          }
+                          window.traceReportText += `${paddedLabel}: [ADDRESS_WRAP_START]${value}[ADDRESS_WRAP_END]\n`;
+
+                    } else {
+                        window.traceReportText += `${paddedLabel}: ${value}\n`;
+                    }
+                     
+                    const rowEl = document.createElement('div');
+                    rowEl.className = 'data-row';
+                     
+                    const labelEl = document.createElement('div');
+                    labelEl.className = 'data-label';
+                    labelEl.textContent = item.label;
+                     
+                    const valueEl = document.createElement('div');
+                    valueEl.className = 'data-value';
+                     
+                    rowEl.appendChild(labelEl);
+                    rowEl.appendChild(valueEl);
+                    resultBox.appendChild(rowEl);
+                     
+                    await delay(50); 
+                    rowEl.style.opacity = 1; 
+                     
+                    await typeValue(valueEl, displayValue, 5); 
+
+                    processedKeys.add(item.key);
+                }
+
+                // Loop remaining keys (excluding 'footer')
+                for (const key of Object.keys(info)) {
+                    if (key === 'footer') continue; // Explicitly ignore footer
+
+                    if (!processedKeys.has(key)) {
+                        let label = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) + " -";
+                        let value = info[key];
+                        if (value && value !== "") {
+                            const paddedLabel = label.padEnd(16, ' ');
+                            window.traceReportText += `${paddedLabel}: ${value}\n`;
+                             
+                            const rowEl = document.createElement('div');
+                            rowEl.className = 'data-row';
+                             
+                            const labelEl = document.createElement('div');
+                            labelEl.className = 'data-label';
+                            labelEl.textContent = label;
+                             
+                            const valueEl = document.createElement('div');
+                            valueEl.className = 'data-value';
+                             
+                            rowEl.appendChild(labelEl);
+                            rowEl.appendChild(valueEl);
+                            resultBox.appendChild(rowEl);
+                             
+                            await delay(50);
+                            rowEl.style.opacity = 1;
+                             
+                            await typeValue(valueEl, value, 5);
+                        }
+                    }
+                }
+                 
+                const spacer = document.createElement('br');
+                resultBox.appendChild(spacer);
+                window.traceReportText += "\n";
+            }
+            
+            const downloadBtn = document.createElement('button');
+            downloadBtn.id = 'downloadBtn';
+            downloadBtn.onclick = downloadPDF;
+            resultBox.appendChild(downloadBtn);
+
+            const footerEl = document.createElement('div');
+            footerEl.className = 'centered-footer';
+            footerEl.textContent = 'Powered by Ayush@8481';
+            resultBox.appendChild(footerEl);
+
+            const footerText = "                                Powered by Ayush@8481";
+            window.traceReportText += `========================================\n`;
+            window.traceReportText += `   ${footerText} \n`;
+            window.traceReportText += `========================================\n`;
+             
+        } else {
+            resultBox.innerHTML = '<div class="error">[!] DATA NOT FOUND IN DATABASE</div>';
+        }
+
+    } catch (e) {
+        console.error(e); 
+        resultBox.innerHTML = '<div class="error">[!] PARSING ERROR - RAW DATA CORRUPTED</div>';
+    }
+}
+
+// PDF Download function (black BG, green text)
+function downloadPDF() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const targetNumber = document.getElementById('numberInput').value.trim() || 'trace_report';
+
+    const X_START = 10;
+    const Y_START = 10;
+    let y = Y_START; 
+    const lineHeight = 5; 
+    const pageHeight = 280; 
+    const textWidth = 190; 
+    const labelPad = 48; 
+     
+    doc.setFillColor(0, 0, 0);
+    doc.rect(0, 0, doc.internal.pageSize.width, doc.internal.pageSize.height, 'F');
+    doc.setTextColor(0, 255, 0);
+
+    doc.setFont("courier", "normal");
+    doc.setFontSize(10); 
+     
+    const textLines = window.traceReportText.split('\n');
+     
+    textLines.forEach(line => {
+        if (line.includes('[ADDRESS_WRAP_START]')) {
+            const parts = line.split('[ADDRESS_WRAP_START]');
+            const labelPart = parts[0].trim();
+            const valuePart = parts[1].replace('[ADDRESS_WRAP_END]', '').trim();
+
+            if (y + lineHeight > pageHeight) { 
+                doc.addPage(); 
+                doc.setFillColor(0, 0, 0);
+                doc.rect(0, 0, doc.internal.pageSize.width, doc.internal.pageSize.height, 'F');
+                doc.setTextColor(0, 255, 0);
+                y = Y_START; 
+            }
+            doc.text(labelPart, X_START, y);
+
+            const remainingWidth = textWidth - (labelPad); 
+            const wrappedValue = doc.splitTextToSize(valuePart, remainingWidth);
+
+            doc.text(wrappedValue[0], X_START + labelPad, y);
+            y += lineHeight;
+
+            for (let i = 1; i < wrappedValue.length; i++) {
+                if (y + lineHeight > pageHeight) { 
+                    doc.addPage();
+                    doc.setFillColor(0, 0, 0);
+                    doc.rect(0, 0, doc.internal.pageSize.width, doc.internal.pageSize.height, 'F');
+                    doc.setTextColor(0, 255, 0);
+                    y = Y_START; 
+                }
+                doc.text(wrappedValue[i], X_START + labelPad, y);
+                y += lineHeight;
+            }
+
+        } else {
+            const lines = doc.splitTextToSize(line, textWidth); 
+             
+            lines.forEach(textLine => {
+                if (y + lineHeight > pageHeight) {
+                    doc.addPage();
+                    doc.setFillColor(0, 0, 0);
+                    doc.rect(0, 0, doc.internal.pageSize.width, doc.internal.pageSize.height, 'F');
+                    doc.setTextColor(0, 255, 0);
+                    y = Y_START; 
+                }
+                if (textLine.startsWith('=')) {
+                    const center = doc.internal.pageSize.width / 2;
+                    doc.text(textLine, center, y, { align: 'center' });
+                } else {
+                    doc.text(textLine, X_START, y);
+                }
+                y += lineHeight;
+            });
+        }
+    });
+
+    doc.save(`${targetNumber}_Trace_Report.pdf`);
+}
+</script>
+</body>
+</html>
