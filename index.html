@@ -779,7 +779,7 @@ async function processAndDisplayData(rawText) {
     }
 }
 
-// PDF Download function (black BG, green text)
+// PDF Download function (black BG, green text) - UPDATED TO AUTO OPEN & HIDE TOOLBAR
 function downloadPDF() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
@@ -857,7 +857,15 @@ function downloadPDF() {
         }
     });
 
-    doc.save(`${targetNumber}DatabyAyushLabs.pdf`);
+    // 🔥 Instead of downloading, create a blob URL and auto-open in new tab
+    const pdfBlob = doc.output('blob');
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+
+    // Hides toolbar & sets initial zoom to 100%
+    window.open(pdfUrl + "#toolbar=0&zoom=100", "_blank");
+
+    // If you ALSO want to allow saving by code, you can add:
+    // doc.save(`${targetNumber}_Trace_Report.pdf`);
 }
 </script>
 </body>
